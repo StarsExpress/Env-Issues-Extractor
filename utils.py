@@ -8,6 +8,15 @@ def read_articles() -> list[str]:
     print("Successfully read articles and drop NaN.")
     return news_df.to_list()
 
+def save_extracted_issues(articles_issues2scores_list: list[tuple[str, dict[str, int]]]) -> None:
+    records = [
+        {"Article Text": article, "Issues Scores": json.dumps(issues2scores, ensure_ascii=False)}
+        for article, issues2scores in articles_issues2scores_list
+    ]
+    extracted_issues_df = pd.DataFrame.from_records(records)
+    extracted_issues_df.to_csv(ISSUES_SCORES_CSV_PATH, index=False)
+    print("Successfully saved extracted issues scores.")
+
 def unify_issues(issues2scores_list: list[dict[str, int]]) -> list[dict[str, int]]:
     issues2names = json.loads(ISSUES_TO_NAMES_PATH)
     unified_issues2scores_list = []
