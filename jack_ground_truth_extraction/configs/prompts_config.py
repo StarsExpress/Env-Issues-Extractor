@@ -28,6 +28,9 @@ Do not add brackets, parentheses, quotes, or outside formatting for any issue.
 """
 
 
-MODEL_ID = "openai/gpt-oss-20b"
+MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 
 MAX_NEW_TOKENS = 256
+
+# Number of articles to process per forward pass through the model
+BATCH_SIZE = 8

@@ -2,7 +2,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 import json
 import torch
 import re
-from configs.prompts_config import EXTRACTION_PROMPT, MODEL_ID, MAX_NEW_TOKENS
+from configs.prompts_config import EXTRACTION_PROMPT, MODEL_ID, MAX_NEW_TOKENS, BATCH_SIZE
+from utils import append_raw_issues
 
 
 def init_gen_pipeline():
@@ -10,7 +11,6 @@ def init_gen_pipeline():
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         torch_dtype=torch.bfloat16,
-        device_map="auto",
         load_in_8bit=False
     )
     gen_pipeline = pipeline(
@@ -23,26 +23,39 @@ def init_gen_pipeline():
     return gen_pipeline
 
 
-def extract_issues(articles: list[str], gen_pipeline) -> list[dict[str, int]]:
-    issues2scores_list: list[dict[str, int]] = []
+def extract_issues(articles: list[tuple[str, str]], gen_pipeline) -> None:
+    # batch inference
+    for start in range(0, len(articles), BATCH_SIZE):
+        batch = articles[start : start + BATCH_SIZE]
+        titles, texts = zip(*batch)
+        prompts = [EXTRACTION_PROMPT.format(article_text=t) for t in texts]
 
-    for idx, article in enumerate(articles):
-        prompt = EXTRACTION_PROMPT.format(article_text=article)
-        output = gen_pipeline(
-            prompt,
+        outputs = gen_pipeline(
+            prompts,
             max_new_tokens=MAX_NEW_TOKENS,
             do_sample=False,
             temperature=0
-        )[0]["generated_text"]
+        )
 
-        print(f"Article {idx} raw out: {output}.")
+        batch_dicts = []
+        for idx, out_list in enumerate(outputs, start=start):
+            # pipeline returns list[dict] per input even when num_return_sequences=1
+            text = out_list[0]["generated_text"]
+            print(f"Article {idx} raw out: {text}.")
+            matches = re.findall(r"\{.*?\}", text, re.S)
+            if matches:
+                # take the last (assumed most complete) dict
+                issues_json = matches[-1]
+            else:
+                # fallback: attempt to load entire text
+                issues_json = text
 
-        try:
-            issues2scores = json.loads(output)
-            issues2scores_list.append(issues2scores)
+            try:
+                issues_dict = json.loads(issues_json)
+                batch_dicts.append({"title": titles[idx-start], "issues": issues_dict})
+            except json.JSONDecodeError:
+                print(f"Warning: could not parse JSON for article {titles[idx-start]}")
 
-        except json.JSONDecodeError:
-            matches = re.findall(r"\{.*?\}", output, re.S)
-            issues2scores_list.extend(json.loads(m) for m in matches if m)
+        append_raw_issues(batch_dicts)
 
-    return issues2scores_list
+    # nothing returned; data streamed

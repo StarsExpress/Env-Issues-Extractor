@@ -1,0 +1,19 @@
+name: env-extract-code
+channels:
+  - conda-forge
+  - pytorch
+  - defaults
+dependencies:
+  # minimal conda-solved set (fast)
+  - python=3.11
+  - numpy<2
+  - pip
+  - pip:
+      - torch==2.2.*
+      - torchvision==0.17.*
+      - sentence-transformers
+      - scikit-learn
+      - pandas
+      - joblib
+      - kneed
+      - transformers     

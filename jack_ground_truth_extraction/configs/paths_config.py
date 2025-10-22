@@ -12,3 +12,6 @@ OPTIMAL_PARAMS_PATH = os.path.join(OUTPUT_FOLDER, "optimal_params.json")
 K_MEANS_MODEL_PATH = os.path.join(OUTPUT_FOLDER, "optimal_k_means.pkl")
 ISSUES_TO_NAMES_PATH = os.path.join(OUTPUT_FOLDER, "issues_to_names.json")
 ISSUES_SCORES_CSV_PATH = os.path.join(OUTPUT_FOLDER, "issues_scores.csv")
+
+# Streamed raw issue-score dicts (one JSON per line)
+RAW_ISSUES_JSONL_PATH = os.path.join(OUTPUT_FOLDER, "raw_issues.jsonl")
