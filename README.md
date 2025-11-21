@@ -1,2 +1,3 @@
-# natural_language_finetuning
-Natural Language Finetuning
+# Finetuned Extractor
+
+Finetuned LLM that detects and quantifies environment issues from article titles.

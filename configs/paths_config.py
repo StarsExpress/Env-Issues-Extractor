@@ -1,14 +1,25 @@
 import os
 
-BASE_PATH = os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DATA_FOLDER = os.path.join(BASE_PATH, "data")
-NEWS_CSV_PATH = os.path.join(DATA_FOLDER, "guardian_environment_news.csv")
+TEACHER_EXTRACTED_ISSUES_PATH = os.path.join(DATA_FOLDER, "teacher_extracted_issues_scores.jsonl")
+
+REQUIRED_KEYS = {"title", "issues"}  # Each line of teacher extracted issues must have exactly these keys.
+
+ISSUES2INDICES_PATH = os.path.join(DATA_FOLDER, "issues2indices.json")
+INDICES2ISSUES_PATH = os.path.join(DATA_FOLDER, "indices2issues.json")
+
+VECTORIZED_TRAIN_PATH = os.path.join(DATA_FOLDER, "vectorized_train_data.jsonl")
+VECTORIZED_TEST_PATH = os.path.join(DATA_FOLDER, "vectorized_test_data.jsonl")
+
+SFT_TRAIN_PATH = os.path.join(DATA_FOLDER, "sft_train_data.jsonl")
+SFT_TEST_PATH = os.path.join(DATA_FOLDER, "sft_test_data.jsonl")
+
+
+MODEL_FOLDER = os.path.join(BASE_PATH, "models")
+
 
 OUTPUT_FOLDER = os.path.join(BASE_PATH, "output")
-OPTIMAL_PARAMS_PATH = os.path.join(OUTPUT_FOLDER, "optimal_params.json")
-K_MEANS_MODEL_PATH = os.path.join(OUTPUT_FOLDER, "optimal_k_means.pkl")
-ISSUES_TO_NAMES_PATH = os.path.join(OUTPUT_FOLDER, "issues_to_names.json")
-ISSUES_SCORES_CSV_PATH = os.path.join(OUTPUT_FOLDER, "issues_scores.csv")
+STUDENT_EXTRACTED_ISSUES_PATH = os.path.join(DATA_FOLDER, "student_extracted_issues.jsonl")
+EVALUATION_RESULTS_PATH = os.path.join(DATA_FOLDER, "evaluation_results.jsonl")

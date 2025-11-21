@@ -1,22 +1,18 @@
-from utils import read_articles, unify_issues, save_unified_issues, save_extracted_issues
-from prompt_engineering import extract_issues, init_gen_pipeline
-from k_means import decide_optimal_clusters
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from configs.paths_config import MODEL_FOLDER
+from evaluator import run_student_inference, evaluate_llm
+from trainer import train_llm
 
 
-def main():
-    articles = read_articles()
-    gen_pipeline = init_gen_pipeline()
-    articles_issues2scores_list = extract_issues(articles, gen_pipeline)
-    save_extracted_issues(articles_issues2scores_list)
+def main() -> None:
+    train_llm()
 
-    # distinct_issues = set()
-    # for issues2scores in issues2scores_list:
-    #     for issue in issues2scores.keys():
-    #         distinct_issues.add(issue)
-    #
-    # decide_optimal_clusters(list(distinct_issues))
-    # unified_issues2scores_list = unify_issues(issues2scores_list)
-    # save_unified_issues(unified_issues2scores_list)
+    print("Load fine-tuned student model.")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_FOLDER)
+    model = AutoModelForCausalLM.from_pretrained(MODEL_FOLDER)
+
+    run_student_inference(model, tokenizer)
+    evaluate_llm()
 
 
 if __name__ == "__main__":

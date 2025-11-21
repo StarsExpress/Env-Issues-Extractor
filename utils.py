@@ -1,40 +1,85 @@
 import json
-import pandas as pd
-from configs.paths_config import ISSUES_TO_NAMES_PATH, NEWS_CSV_PATH, ISSUES_SCORES_CSV_PATH
+from configs.paths_config import TEACHER_EXTRACTED_ISSUES_PATH, REQUIRED_KEYS, ISSUES2INDICES_PATH, INDICES2ISSUES_PATH
 
 
-def read_articles() -> list[str]:
-    news_df = pd.read_csv(NEWS_CSV_PATH)["Article Text"].dropna()
-    print("Successfully read articles and drop NaN.")
-    return news_df.to_list()
+def read_teacher_issues_scores() -> list[dict[str, str | dict[str, int]]]:
+    """
+    Reads teacher extracted issues from JSONL file and returns a list of dictionaries.
+    Each dictionary has the structure:
+    {
+        "title": str,
+        "issues": {
+            "issue_name": int,  # severity score
+            ...
+        }
+    }
+    This function ensures that each dictionary contains these required keys.
+    """
+    extracted_issues: list[dict[str, str | dict[str, int]]] = []
+    with open(TEACHER_EXTRACTED_ISSUES_PATH) as f:
+        for line in f:
+            issues_dict = json.loads(line)
+            if set(issues_dict.keys()) == REQUIRED_KEYS:
+                extracted_issues.append(issues_dict)
 
-def save_extracted_issues(articles_issues2scores_list: list[tuple[str, dict[str, int]]]) -> None:
-    records = [
-        {"Article Text": article, "Issues Scores": json.dumps(issues2scores, ensure_ascii=False)}
-        for article, issues2scores in articles_issues2scores_list
-    ]
-    extracted_issues_df = pd.DataFrame.from_records(records)
-    extracted_issues_df.to_csv(ISSUES_SCORES_CSV_PATH, index=False)
-    print("Successfully saved extracted issues scores.")
+    print("Successfully read teacher extracted issues.")
+    return extracted_issues
 
-def unify_issues(issues2scores_list: list[dict[str, int]]) -> list[dict[str, int]]:
-    issues2names = json.loads(ISSUES_TO_NAMES_PATH)
-    unified_issues2scores_list = []
 
-    for issues2scores in issues2scores_list:
-        renamed_issues2scores = dict()
-        for issue, score in issues2scores.items():
-            if issue in issues2names:
-                issue = issues2names[issue]
-            renamed_issues2scores[issue] = score
+def vectorize_issues_scores(
+    extracted_issues: list[dict[str, str | dict[str, int]]]
+) -> list[dict[str, list[int]]]:
+    """
+    Vectorizes the issues and severity scores from the teacher model output.
 
-        unified_issues2scores_list.append(renamed_issues2scores)
+    Returns:
+        encoded: list of dicts, each with:
+            - title: str
+            - issues: list[int]  (0 or 1 label)
+            - severity: list[int]  (0 ~ 10 scores)
+    """
+    occurred_issues = set()  # Collect all distinct issues
+    for item in extracted_issues:
+        occurred_issues.update(set(item["issues"].keys()))
 
-    print("Successfully unified issues.")
-    return unified_issues2scores_list
+    occurred_issues = sorted(list(occurred_issues))
 
-def save_unified_issues(unified_issues2scores_list: list[dict[str, int]]) -> None:
-    news_df = pd.read_csv(NEWS_CSV_PATH)["Article Text"].dropna()
-    news_df["Issues Scores"] = unified_issues2scores_list
-    news_df.to_csv(ISSUES_SCORES_CSV_PATH, index=False)
-    print("Successfully saved new issues scores.")
+    issues2indices = {issue: i for i, issue in enumerate(occurred_issues)}
+    json.dump(issues2indices, open(ISSUES2INDICES_PATH, "w"))
+    print("Successfully saved issues to indices map.")
+
+    indices2issues = {i: issue for i, issue in enumerate(occurred_issues)}
+    json.dump(indices2issues, open(INDICES2ISSUES_PATH, "w"))
+    print("Successfully saved indices to issues map.")
+
+    encoded_issues_scores: list[dict[str, list[int]]] = []
+
+    for item in extracted_issues:
+        title = item["title"]
+        issues_scores = item["issues"]
+
+        issues_vec = [0] * len(occurred_issues)
+        severity_vec = [0] * len(occurred_issues)
+
+        for issue, score in issues_scores.items():
+            idx = issues2indices[issue]
+            issues_vec[idx] = 1  # 0 or 1 label.
+            severity_vec[idx] = score  # 1 ~ 10 label.
+
+        encoded_issues_scores.append(
+            {
+                "title": title,
+                "issues": issues_vec,
+                "severity": severity_vec
+            }
+        )
+
+    print("Successfully vectorized issues and scores.")
+    print(f"Total unique issues: {len(occurred_issues)}.")
+    return encoded_issues_scores
+
+
+if __name__ == "__main__":
+    # Some tests.
+    teacher_issues = read_teacher_issues_scores()
+    vectorize_issues_scores(teacher_issues)
