@@ -17,7 +17,7 @@ SFT_TRAIN_PATH = os.path.join(DATA_FOLDER, "sft_train_data.jsonl")
 SFT_TEST_PATH = os.path.join(DATA_FOLDER, "sft_test_data.jsonl")
 
 
-MODEL_FOLDER = os.path.join(BASE_PATH, "models")
+MODEL_FOLDER = os.path.join(BASE_PATH, "model")
 
 
 OUTPUT_FOLDER = os.path.join(BASE_PATH, "output")

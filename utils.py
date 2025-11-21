@@ -2,6 +2,21 @@ import json
 from configs.paths_config import TEACHER_EXTRACTED_ISSUES_PATH, REQUIRED_KEYS, ISSUES2INDICES_PATH, INDICES2ISSUES_PATH
 
 
+def load_jsonl(path):
+    data = []
+    with open(path, "r") as f:
+        for line in f:
+            data.append(json.loads(line))
+
+    return data
+
+
+def save_jsonl(path, data):
+    with open(path, "w") as f:
+        for item in data:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+
 def read_teacher_issues_scores() -> list[dict[str, str | dict[str, int]]]:
     """
     Reads teacher extracted issues from JSONL file and returns a list of dictionaries.

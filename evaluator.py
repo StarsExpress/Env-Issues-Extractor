@@ -1,149 +1,141 @@
+import os
 import json
-from tqdm import tqdm
-from datasets import load_dataset
-import torch
 import numpy as np
+from tqdm import tqdm
+import torch
+from datasets import load_dataset
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from configs.paths_config import STUDENT_EXTRACTED_ISSUES_PATH, TEACHER_EXTRACTED_ISSUES_PATH
-from configs.paths_config import SFT_TEST_PATH, EVALUATION_RESULTS_PATH
+from configs.paths_config import SFT_TEST_PATH, MODEL_FOLDER, EVALUATION_RESULTS_PATH
+from utils import load_jsonl
 
 
-# -------------------------------------------------------------
-# Load teacher ground truth (vectorized test set).
-# -------------------------------------------------------------
-def load_teacher_extracted_issues(path):
-    extracted_issues = []
-    with open(path, "r") as f:
-        for line in f:
-            extracted_issues.append(json.loads(line))
-
-    return extracted_issues
+# ============================================================
+# Force disable flash attention.
+# ============================================================
+os.environ["FLASH_ATTENTION"] = "0"
+os.environ["ENABLE_FLASH_ATTENTION"] = "0"
+os.environ["TORCH_SDP_ATTENTION"] = "0"
+os.environ["ATTN_BACKEND"] = "EAGER"
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
 
-def extract_json(text):
-    """
-    Extract the JSON dictionary from model output.
-    """
+def extract_json(decoded_inference):
     try:
-        start = text.index("{")
-        end = text.rindex("}") + 1
-        return json.loads(text[start:end])
+        start = decoded_inference.index("{")
+        end = decoded_inference.rindex("}") + 1
+        return json.loads(decoded_inference[start:end])
 
-    except:
+    except Exception:
         return {}
 
 
-# -------------------------------------------------------------
-# Let student model predict issues + severity.
-# -------------------------------------------------------------
-def run_student_inference(model, tokenizer):
-    model.eval()
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model.to(device)
+# ============================================================
+# Load finetuned model: Qwen2 + LoRA.
+# ============================================================
+def load_student_model():
+    print("Loading tokenizer...")
+    tokenizer = AutoTokenizer.from_pretrained(
+        MODEL_FOLDER,
+        trust_remote_code=True
+    )
+    tokenizer.pad_token = tokenizer.eos_token
 
-    print("Running student model inference...")
+    print("Loading model...")
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_FOLDER,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        attn_implementation="eager"  # Can;t use FlashAttention2.
+    )
+
+    return model, tokenizer
+
+
+def run_student_inference(model, tokenizer):
+    print("\nRunning student inference...\n")
 
     dataset = load_dataset("json", data_files={"test": SFT_TEST_PATH})["test"]
-    extracted_issues = []
+    student_inferences = []
 
     for row in tqdm(dataset):
-        messages = row["messages"]  # Full SFT-style messages.
-        user_prompt = messages[0]["content"]  # Only user content.
+        user_prompt = row["messages"][0]["content"]
 
-        input_ids = tokenizer(
+        inputs = tokenizer(
             user_prompt,
-            return_tensors="pt"
-        ).to(device)
+            return_tensors="pt",
+            truncation=True,
+            max_length=512
+        ).to(model.device)
 
         with torch.no_grad():
-            out = model.generate(
-                **input_ids,
-                max_new_tokens=300,
-                temperature=0.2
-            )
+            with torch.backends.cuda.sdp_kernel(
+                enable_flash=False,
+                enable_math=True,
+                enable_mem_efficient=False
+            ):
+                out = model.generate(
+                    **inputs,
+                    max_new_tokens=256,
+                    do_sample=False,
+                )
 
-        decoded = tokenizer.decode(out[0], skip_special_tokens=True)
+        decoded_inference = tokenizer.decode(out[0], skip_special_tokens=True)
+        student_inference = extract_json(decoded_inference)
 
-        # Try extract JSON only.
-        json_part = extract_json(decoded)
-
-        extracted_issues.append(
+        student_inferences.append(
             {
                 "title": row["title"],
-                "issues": json_part
+                "issues": student_inference
             }
         )
 
     with open(STUDENT_EXTRACTED_ISSUES_PATH, "w") as f:
-        for item in extracted_issues:
-            f.write(json.dumps(item) + "\n")
+        for x in student_inferences:
+            f.write(json.dumps(x) + "\n")
 
-    print(f"Saved student_extracted_issues.jsonl to {STUDENT_EXTRACTED_ISSUES_PATH}")
-    return extracted_issues
+    print(f"\nSaved student extracted issues to {STUDENT_EXTRACTED_ISSUES_PATH}")
+    return student_inferences
 
 
-# -------------------------------------------------------------
-# Evaluation for each extracted issue.
-# -------------------------------------------------------------
-def compute_errors(teacher_extraction, student_extraction):
-    """
-    teacher_dict = {"air pollution": 7, "deforestation": 6, ...}
-    student_dict = {"air pollution": 9, "biodiversity loss": 3}
-
-    Error = sum of |student - teacher| for:
-    - overlapping issues
-    - extra issues predicted by student  (teacher score = 0)
-    - teacher issues missed by student  (student score = 0)
-    """
-    all_keys = set(teacher_extraction.keys()) | set(student_extraction.keys())
-
+def compute_errors(teacher_issues, student_issues):
+    all_keys = set(teacher_issues.keys()) | set(student_issues.keys())
     errors = []
+
     for k in all_keys:
-        teacher = teacher_extraction.get(k, 0)
-        student = student_extraction.get(k, 0)
-        errors.append(abs(student - teacher))
+        teacher = teacher_issues.get(k, 0)
+        student = student_issues.get(k, 0)
+        errors.append(abs(teacher - student))
 
     return errors
 
 
-# -------------------------------------------------------------
-# Evaluate whole dataset.
-# -------------------------------------------------------------
 def evaluate_llm():
-    teacher_extraction = []
-    with open(TEACHER_EXTRACTED_ISSUES_PATH, "r") as f:
-        for line in f:
-            teacher_extraction.append(json.loads(line))
+    print("\nEvaluating...\n")
 
-    student_extraction = []
-    with open(STUDENT_EXTRACTED_ISSUES_PATH, "r") as f:
-        for line in f:
-            student_extraction.append(json.loads(line))
+    teacher_issues = load_jsonl(TEACHER_EXTRACTED_ISSUES_PATH)
+    student_issues = load_jsonl(STUDENT_EXTRACTED_ISSUES_PATH)
 
-    assert len(teacher_extraction) == len(student_extraction), "Teacher and student test sets mismatch!"
+    if len(teacher_issues) != len(student_issues):
+        raise ValueError("Teacher and student test size mismatch!")
 
     all_errors = []
+    for teacher, student in zip(teacher_issues, student_issues):
+        all_errors.extend(compute_errors(teacher["issues"], student["issues"]))
 
-    for teacher, student in zip(teacher_extraction, student_extraction):
-        teacher_scores = teacher["issues"]
-        student_scores = student["issues"]
-        errors = compute_errors(teacher_scores, student_scores)
-        all_errors.extend(errors)
+    errors = np.array(all_errors)
+    mae = float(np.mean(errors))
+    rmse = float(np.sqrt(np.mean(errors ** 2)))
 
-    all_errors = np.array(all_errors)
-    mae = np.mean(all_errors)
-    rmse = np.sqrt(np.mean(all_errors ** 2))
-
-    result = {
-        "MAE": float(mae),
-        "RMSE": float(rmse),
-        "Total comparisons": len(all_errors)
+    evaluation_metrics = {
+        "MAE": mae,
+        "RMSE": rmse,
+        "Total comparisons": len(errors)
     }
 
     with open(EVALUATION_RESULTS_PATH, "w") as f:
-        json.dump(result, f, indent=4)
+        json.dump(evaluation_metrics, f, indent=4)
 
-    print("==================================")
-    print("FINAL EVALUATION METRICS:")
-    print("==================================")
-    print(json.dumps(result, indent=4))
+    print(json.dumps(evaluation_metrics, indent=4))
     print(f"Saved evaluation results to {EVALUATION_RESULTS_PATH}")
