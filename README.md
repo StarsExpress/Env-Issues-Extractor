@@ -1,7 +1,7 @@
 # Environmental Issues Extractor ☃︎
 
 ## 📑 Description
-Finetuned LLM that detects and quantifies environment issues from 10,000+ article titles.
+Supervised fine-tuned LLM that detects and quantifies environment issues from 10,000+ environmental article titles.
 
 ## 📦 Selected LLM
 ### Qwen/Qwen2.5-3B-Instruct
@@ -9,7 +9,7 @@ Finetuned LLM that detects and quantifies environment issues from 10,000+ articl
 
 ## 📊 Evaluation Metrics
 #### MAE: 0.0038806808544477205
-#### RMSE: 0.029841735729631162,
+#### RMSE: 0.029841735729631162
 #### Total samples: 2187
 
 ## 📲 Example Issues Extraction
