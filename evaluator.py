@@ -1,37 +1,61 @@
-import os
 import json
-import numpy as np
+import re
 from tqdm import tqdm
 import torch
-from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from configs.paths_config import STUDENT_EXTRACTED_ISSUES_PATH, TEACHER_EXTRACTED_ISSUES_PATH
-from configs.paths_config import SFT_TEST_PATH, MODEL_FOLDER, EVALUATION_RESULTS_PATH
+from configs.evaluation_config import BATCH_SIZE
+from configs.paths_config import (
+    SFT_TEST_PATH,
+    VECTORIZED_TEST_PATH,
+    ISSUES2INDICES_PATH,
+    MODEL_FOLDER,
+    STUDENT_EXTRACTED_ISSUES_PATH,
+    EVALUATION_RESULTS_PATH,
+)
 from utils import load_jsonl
 
 
 # ============================================================
-# Force disable flash attention.
+# Sparse parser.
 # ============================================================
-os.environ["FLASH_ATTENTION"] = "0"
-os.environ["ENABLE_FLASH_ATTENTION"] = "0"
-os.environ["TORCH_SDP_ATTENTION"] = "0"
-os.environ["ATTN_BACKEND"] = "EAGER"
-os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+def parse_two_sparse_lists(text, vocab_size):
+    """
+    Expected model output format:
+        [23, 120, 501]
+        [7, 3, 2]
+    """
+    text_flat = text.replace("\n", " ")
+    matches = re.findall(r"\[.*?\]", text_flat)
 
+    if len(matches) < 2:
+        return [0] * vocab_size, [0] * vocab_size
 
-def extract_json(decoded_inference):
     try:
-        start = decoded_inference.index("{")
-        end = decoded_inference.rindex("}") + 1
-        return json.loads(decoded_inference[start:end])
+        indices = json.loads(matches[0])
+        severities = json.loads(matches[1])
 
-    except Exception:
-        return {}
+        if not isinstance(indices, list) or not isinstance(severities, list):
+            return [0] * vocab_size, [0] * vocab_size
+
+        if len(indices) != len(severities):
+            return [0] * vocab_size, [0] * vocab_size
+
+        issues_vec = [0] * vocab_size
+        severity_vec = [0] * vocab_size
+
+        for idx, sev in zip(indices, severities):
+            if 0 <= idx < vocab_size and 1 <= sev <= 10:
+                issues_vec[idx] = 1
+                severity_vec[idx] = sev
+
+        return issues_vec, severity_vec
+
+    except:
+        return [0] * vocab_size, [0] * vocab_size
 
 
 # ============================================================
-# Load finetuned model: Qwen2 + LoRA.
+# Load fine-tuned student model.
 # ============================================================
 def load_student_model():
     print("Loading tokenizer...")
@@ -47,95 +71,140 @@ def load_student_model():
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
         device_map="auto",
-        attn_implementation="eager"  # Can;t use FlashAttention2.
+        attn_implementation="eager"
     )
 
     return model, tokenizer
 
 
-def run_student_inference(model, tokenizer):
-    print("\nRunning student inference...\n")
+def run_student_inference(model, tokenizer, vocabularies):
+    vocab_size = len(vocabularies)
+    test_prompts = load_jsonl(SFT_TEST_PATH)
 
-    dataset = load_dataset("json", data_files={"test": SFT_TEST_PATH})["test"]
-    student_inferences = []
+    prompts = []
+    titles = []
+    # ---------- Build prompts first. ----------
+    for item in test_prompts:
+        messages = item["messages"]
+        title = item["title"]
 
-    for row in tqdm(dataset):
-        user_prompt = row["messages"][0]["content"]
+        prompt = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        titles.append(title)
+        prompts.append(prompt)
 
-        inputs = tokenizer(
-            user_prompt,
+    # ---------- Batch inference. ----------
+    student_vectors = []
+    student_extracted_issues = []
+
+    print("\nRunning batch student inference...\n")
+
+    for i in tqdm(range(0, len(prompts), BATCH_SIZE)):
+        batch_prompts = prompts[i : i + BATCH_SIZE]
+        batch_titles = titles[i : i + BATCH_SIZE]
+
+        # Tokenize as batch.
+        batch_inputs = tokenizer(
+            batch_prompts,
             return_tensors="pt",
+            padding=True,
             truncation=True,
-            max_length=512
+            max_length=512,
         ).to(model.device)
 
         with torch.no_grad():
             with torch.backends.cuda.sdp_kernel(
-                enable_flash=False,
-                enable_math=True,
-                enable_mem_efficient=False
+                enable_flash=False, enable_math=True, enable_mem_efficient=False
             ):
-                out = model.generate(
-                    **inputs,
-                    max_new_tokens=256,
+                outputs = model.generate(
+                    **batch_inputs,
+                    max_new_tokens=64,
                     do_sample=False,
+                    use_cache=True
                 )
 
-        decoded_inference = tokenizer.decode(out[0], skip_special_tokens=True)
-        student_inference = extract_json(decoded_inference)
+        input_ids = batch_inputs["input_ids"]  # Slice out generation part.
+        for b in range(len(batch_prompts)):
+            gen_tokens = outputs[b][ input_ids[b].shape[0] : ]
+            decoded = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
 
-        student_inferences.append(
-            {
-                "title": row["title"],
-                "issues": student_inference
+            # Parse sparse lists.
+            issues_vec, severity_vec = parse_two_sparse_lists(decoded, vocab_size)
+
+            # Build dict.
+            extracted_dict = {
+                vocabularies[idx]: sev
+                for idx, sev in enumerate(severity_vec) if sev > 0
             }
-        )
+
+            student_extracted_issues.append({
+                "title": batch_titles[b],
+                "issues": extracted_dict
+            })
+
+            student_vectors.append({
+                "issues": issues_vec,
+                "severity": severity_vec
+            })
 
     with open(STUDENT_EXTRACTED_ISSUES_PATH, "w") as f:
-        for x in student_inferences:
-            f.write(json.dumps(x) + "\n")
+        for row in student_extracted_issues:
+            f.write(json.dumps(row) + "\n")
 
-    print(f"\nSaved student extracted issues to {STUDENT_EXTRACTED_ISSUES_PATH}")
-    return student_inferences
+    print(f"\nSaved student extractions to {STUDENT_EXTRACTED_ISSUES_PATH}")
+    return student_vectors
 
 
-def compute_errors(teacher_issues, student_issues):
-    all_keys = set(teacher_issues.keys()) | set(student_issues.keys())
-    errors = []
+# ============================================================
+# Compute MAE / RMSE.
+# ============================================================
+def compute_metrics(teacher_vecs, student_vecs):
+    mae_sum = 0
+    mse_sum = 0
+    count = 0
 
-    for k in all_keys:
-        teacher = teacher_issues.get(k, 0)
-        student = student_issues.get(k, 0)
-        errors.append(abs(teacher - student))
+    for teacher_vec, student_vec in zip(teacher_vecs, student_vecs):
+        teacher_sev = teacher_vec["severity"]
+        student_sev = student_vec["severity"]
 
-    return errors
+        diffs = [(s - t) for s, t in zip(student_sev, teacher_sev)]
+
+        mae_sum += sum(abs(x) for x in diffs) / len(teacher_sev)
+        mse_sum += sum(x * x for x in diffs) / len(teacher_sev)
+        count += 1
+
+    return mae_sum / count, mse_sum / count
 
 
 def evaluate_llm():
-    print("\nEvaluating...\n")
+    print("Loading model...")
+    model, tokenizer = load_student_model()
 
-    teacher_issues = load_jsonl(TEACHER_EXTRACTED_ISSUES_PATH)
-    student_issues = load_jsonl(STUDENT_EXTRACTED_ISSUES_PATH)
+    print("Loading vocab...")
+    issues2indices = json.load(open(ISSUES2INDICES_PATH))
+    vocabularies = list(issues2indices.keys())
 
-    if len(teacher_issues) != len(student_issues):
-        raise ValueError("Teacher and student test size mismatch!")
+    print("Loading teacher vectors...")
+    teacher_vecs = load_jsonl(VECTORIZED_TEST_PATH)
 
-    all_errors = []
-    for teacher, student in zip(teacher_issues, student_issues):
-        all_errors.extend(compute_errors(teacher["issues"], student["issues"]))
+    print("Running student inference (batch)...")
+    student_vecs = run_student_inference(model, tokenizer, vocabularies)
 
-    errors = np.array(all_errors)
-    mae = float(np.mean(errors))
-    rmse = float(np.sqrt(np.mean(errors ** 2)))
+    print("Computing MAE / RMSE...")
+    mae, rmse = compute_metrics(teacher_vecs, student_vecs)
 
-    evaluation_metrics = {
+    results = {
         "MAE": mae,
         "RMSE": rmse,
-        "Total comparisons": len(errors)
+        "Total samples": len(teacher_vecs)
     }
 
     with open(EVALUATION_RESULTS_PATH, "w") as f:
-        json.dump(evaluation_metrics, f, indent=4)
+        json.dump(results, f, indent=4)
 
-    print(json.dumps(evaluation_metrics, indent=4))
-    print(f"Saved evaluation results to {EVALUATION_RESULTS_PATH}")
+    print("\n===== Evaluation Results =====")
+    print(json.dumps(results, indent=4))
+    print(f"\nSaved evaluation to {EVALUATION_RESULTS_PATH}")

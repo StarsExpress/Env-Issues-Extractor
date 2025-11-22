@@ -1,43 +1,49 @@
 import json
-from configs.paths_config import VECTORIZED_TRAIN_PATH, VECTORIZED_TEST_PATH, ISSUES2INDICES_PATH
-from configs.paths_config import SFT_TRAIN_PATH, SFT_TEST_PATH
+from configs.paths_config import (
+    VECTORIZED_TRAIN_PATH,
+    VECTORIZED_TEST_PATH,
+    ISSUES2INDICES_PATH,
+    SFT_TRAIN_PATH,
+    SFT_TEST_PATH
+)
 from utils import load_jsonl, save_jsonl
-
-
-def build_prompt(title, vocab_list):
-    vocab_text = ", ".join(vocab_list)
-    return (
-        "You are an environmental news analyst.\n"
-        "Your task is to output two lists:\n"
-        "1. issues: binary list (1 if issue is present, else 0)\n"
-        "2. severity: list of scores (0–10)\n\n"
-        f"Environmental issue list (in fixed order): [{vocab_text}]\n\n"
-        f"### Article title:\n{title}\n"
-    )
 
 
 def build_sft_dataset(vectorized_data, vocabularies: list[str]):
     sft_dataset = []
+
     for sample in vectorized_data:
-        title = sample["title"]
+        title = str(sample["title"]).strip()
+        issues_vec = sample["issues"]
+        severity_vec = sample["severity"]
 
-        title = str(title).strip()  # Title must be string.
+        # ---- Sparse encoding. ----
+        indices = [i for i, v in enumerate(issues_vec) if v == 1]
+        severities = [severity_vec[i] for i in indices]
 
-        issues = sample["issues"]
-        severity = sample["severity"]
+        # Convert to shorter JSON lists.
+        assistant_output = json.dumps(indices) + "\n" + json.dumps(severities)
 
-        user_prompt = build_prompt(title, vocabularies)
-        assistant_output = {
-            "issues": issues,
-            "severity": severity
-        }
+        # ---- Build prompt. ----
+        vocab_len = len(vocabularies)
+        user_prompt = (
+            "You are an environmental news analyst.\n"
+            "Your task is to output TWO lists ONLY:\n\n"
+            "Line 1: [indices of issues present]\n"
+            "Line 2: [severity scores aligned with the same indices]\n\n"
+            f"Valid issue indices: 0 to {vocab_len - 1}\n"
+            "Severity scores range: 1–10\n\n"
+            f"### Article title:\n{title}\n\n"
+            "### Output:\n"
+            "(Two JSON lists ONLY, no explanation or text)"
+        )
 
         sft_dataset.append(
             {
                 "title": title,
                 "messages": [
                     {"role": "user", "content": user_prompt},
-                    {"role": "assistant", "content": json.dumps(assistant_output)}
+                    {"role": "assistant", "content": assistant_output}
                 ]
             }
         )
@@ -50,7 +56,7 @@ def save_sft_data():
     vector_test = load_jsonl(VECTORIZED_TEST_PATH)
 
     issues2indices = json.load(open(ISSUES2INDICES_PATH))
-    issues = list(issues2indices.keys())
+    issues = list(issues2indices.keys())  # Keys already sorted during utils vectorization.
 
     sft_train = build_sft_dataset(vector_train, issues)
     sft_test = build_sft_dataset(vector_test, issues)

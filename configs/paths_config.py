@@ -21,5 +21,5 @@ MODEL_FOLDER = os.path.join(BASE_PATH, "model")
 
 
 OUTPUT_FOLDER = os.path.join(BASE_PATH, "output")
-STUDENT_EXTRACTED_ISSUES_PATH = os.path.join(DATA_FOLDER, "student_extracted_issues.jsonl")
-EVALUATION_RESULTS_PATH = os.path.join(DATA_FOLDER, "evaluation_results.jsonl")
+STUDENT_EXTRACTED_ISSUES_PATH = os.path.join(OUTPUT_FOLDER, "student_extracted_issues.jsonl")
+EVALUATION_RESULTS_PATH = os.path.join(OUTPUT_FOLDER, "evaluation_results.jsonl")

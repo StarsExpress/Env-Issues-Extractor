@@ -1,4 +1,5 @@
-from datasets import load_dataset, Dataset
+import json
+from datasets import Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig
@@ -7,28 +8,20 @@ from configs.paths_config import SFT_TRAIN_PATH, MODEL_FOLDER
 from configs.train_config import MODEL_ID
 
 
-def formatting_func(example) -> list[str]:
-    messages = example.get("messages", [])
-    if not isinstance(messages, list) or len(messages) == 0:
-        return ["User: dummy\nAssistant: dummy\n"]
+# Correct Qwen-compatible formatting function.
+def build_formatter(tokenizer):
+    def formatting_func(example):
+        messages = example["messages"]
 
-    text = ""
-    for message in messages:
-        if not isinstance(message, dict):
-            continue
+        # Qwen requires using its own chat template.
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=False
+        )
+        return text
 
-        role = message.get("role", "user").capitalize()
-        content = message.get("content", "")
-        text += f"{role}: {content}\n"
-
-    text = text.strip()
-    if len(text) > 1600:  # Ensure memory efficiency.
-        text = text[:1600].rstrip()
-
-    if len(text) == 0:
-        text = "User: dummy\nAssistant: dummy\n"
-
-    return [text]  # Must return a list of strings for the trainer.
+    return formatting_func
 
 
 def train_llm():
@@ -40,11 +33,14 @@ def train_llm():
     tokenizer.pad_token = tokenizer.eos_token
 
     print("Loading SFT train dataset...")
-    dataset = load_dataset(
-        "json",
-        data_files=SFT_TRAIN_PATH,
-        split="train",
-    )
+    # ---- Avoid Arrow / TMP writing completely. ----
+    data_list = []
+
+    with open(SFT_TRAIN_PATH, "r") as f:
+        for line in f:
+            data_list.append(json.loads(line))
+
+    dataset = Dataset.from_list(data_list)
 
     print("Loading base model...")
     model = AutoModelForCausalLM.from_pretrained(
@@ -61,17 +57,12 @@ def train_llm():
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj"
-        ]
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]
     )
 
     sft_config = SFTConfig(
         output_dir=MODEL_FOLDER,
-        num_train_epochs=3,
+        num_train_epochs=2,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=1,
         learning_rate=2e-4,
@@ -79,26 +70,27 @@ def train_llm():
         save_steps=500,
         save_total_limit=1,
         bf16=True,
-        packing=False,  # 🚨 MUST BE DISABLED.
-        max_seq_length=512,  # Ensure seq length is manageable for memory.
+        packing=False,
+        max_seq_length=512,
     )
 
-    print("Filtering bad samples...")
-    clean_samples = []
-
-    for row in dataset:
-        messages = row.get("messages", [])
-        if isinstance(messages, list) and len(messages) >= 1:
-            clean_samples.append(row)
-
-    dataset = Dataset.from_list(clean_samples)  # Rebuild into Dataset.
+    # Clean bad samples.
+    clean_samples = [
+        row for row in dataset
+        if isinstance(row.get("messages", []), list) and len(row["messages"]) >= 2
+    ]
+    dataset = Dataset.from_list(clean_samples)
     print("Clean samples size:", len(dataset))
 
+    # Build correct formatting function.
+    formatting_func = build_formatter(tokenizer)
+
+    print("Setting up trainer...")
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
         train_dataset=dataset,
-        formatting_func=formatting_func,  # Must self define for custom formatting.
+        formatting_func=formatting_func,
         dataset_text_field=None,
         peft_config=lora_config,
         args=sft_config,
@@ -111,4 +103,4 @@ def train_llm():
     trainer.save_model(MODEL_FOLDER)
     tokenizer.save_pretrained(MODEL_FOLDER)
 
-    print("Training complete! Finetuned LLM saved to:", MODEL_FOLDER)
+    print("Training complete! Model saved to:", MODEL_FOLDER)

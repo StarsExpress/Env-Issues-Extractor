@@ -95,6 +95,5 @@ def vectorize_issues_scores(
 
 
 if __name__ == "__main__":
-    # Some tests.
     teacher_issues = read_teacher_issues_scores()
     vectorize_issues_scores(teacher_issues)
