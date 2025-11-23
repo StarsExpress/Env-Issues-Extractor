@@ -2,10 +2,10 @@ from sklearn.model_selection import train_test_split
 import json
 from configs.paths_config import VECTORIZED_TRAIN_PATH, VECTORIZED_TEST_PATH
 from configs.train_config import TEST_SIZE, RANDOM_STATE
-from utils import read_teacher_issues_scores, vectorize_issues_scores
 
 
 def split_train_test(encoded_issues_scores: list[dict[str, list[int]]]) -> None:
+    """Splits encoded issues and scores into train and test sets, and saves them."""
     train, test = train_test_split(encoded_issues_scores, test_size=TEST_SIZE, random_state=RANDOM_STATE)
 
     with open(VECTORIZED_TRAIN_PATH, "w") as f:
@@ -19,9 +19,3 @@ def split_train_test(encoded_issues_scores: list[dict[str, list[int]]]) -> None:
             f.write(json.dumps(row) + "\n")
 
     print(f"Test set saved to {VECTORIZED_TEST_PATH} with {len(test)} samples.")
-
-
-if __name__ == "__main__":
-    teacher_issues = read_teacher_issues_scores()
-    encoded_issues_scores = vectorize_issues_scores(teacher_issues)
-    split_train_test(encoded_issues_scores)

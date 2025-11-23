@@ -1,8 +1,10 @@
 import json
-from configs.paths_config import TEACHER_EXTRACTED_ISSUES_PATH, REQUIRED_KEYS, ISSUES2INDICES_PATH, INDICES2ISSUES_PATH
+from configs.paths_config import TEACHER_EXTRACTED_ISSUES_PATH, REQUIRED_KEYS
+from configs.paths_config import ISSUES2INDICES_PATH, INDICES2ISSUES_PATH
 
 
-def load_jsonl(path):
+def load_jsonl(path: str) -> list[dict]:
+    """Loads JSONL file and returns a list of dictionaries."""
     data = []
     with open(path, "r") as f:
         for line in f:
@@ -11,7 +13,8 @@ def load_jsonl(path):
     return data
 
 
-def save_jsonl(path, data):
+def save_jsonl(path: str, data: list[dict]) -> None:
+    """Saves list of dictionaries to JSONL file."""
     with open(path, "w") as f:
         for item in data:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
@@ -53,11 +56,11 @@ def vectorize_issues_scores(
             - issues: list[int]  (0 or 1 label)
             - severity: list[int]  (0 ~ 10 scores)
     """
-    occurred_issues = set()  # Collect all distinct issues
+    occurred_issues = set()  # Collect all distinct issues.
     for item in extracted_issues:
         occurred_issues.update(set(item["issues"].keys()))
 
-    occurred_issues = sorted(list(occurred_issues))
+    occurred_issues = sorted(list(occurred_issues))  # Sort list for consistent orders.
 
     issues2indices = {issue: i for i, issue in enumerate(occurred_issues)}
     json.dump(issues2indices, open(ISSUES2INDICES_PATH, "w"))
@@ -73,19 +76,19 @@ def vectorize_issues_scores(
         title = item["title"]
         issues_scores = item["issues"]
 
-        issues_vec = [0] * len(occurred_issues)
-        severity_vec = [0] * len(occurred_issues)
+        issues_vector = [0] * len(occurred_issues)
+        severity_vector = [0] * len(occurred_issues)
 
         for issue, score in issues_scores.items():
             idx = issues2indices[issue]
-            issues_vec[idx] = 1  # 0 or 1 label.
-            severity_vec[idx] = score  # 1 ~ 10 label.
+            issues_vector[idx] = 1  # 0 or 1 label.
+            severity_vector[idx] = score  # 1 ~ 10 label.
 
         encoded_issues_scores.append(
             {
                 "title": title,
-                "issues": issues_vec,
-                "severity": severity_vec
+                "issues": issues_vector,
+                "severity": severity_vector
             }
         )
 

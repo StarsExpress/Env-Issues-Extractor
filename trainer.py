@@ -5,12 +5,13 @@ from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig
 import torch
 from configs.paths_config import SFT_TRAIN_PATH, MODEL_FOLDER
-from configs.train_config import MODEL_ID
+from configs.train_config import ATTENTION_DIM, DROPOUT
+from configs.train_config import MODEL_ID, TRAIN_BATCH_SIZE, EPOCHS, LEARNING_RATE, MAX_SEQ_LEN
 
 
 # Correct Qwen-compatible formatting function.
 def build_formatter(tokenizer):
-    def formatting_func(example):
+    def formatting_func(example) -> str:
         messages = example["messages"]
 
         # Qwen requires using its own chat template.
@@ -24,7 +25,7 @@ def build_formatter(tokenizer):
     return formatting_func
 
 
-def train_llm():
+def train_llm() -> None:
     print("Loading tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(
         MODEL_ID,
@@ -33,16 +34,15 @@ def train_llm():
     tokenizer.pad_token = tokenizer.eos_token
 
     print("Loading SFT train dataset...")
-    # ---- Avoid Arrow / TMP writing completely. ----
-    data_list = []
 
+    data_list = []  # ---- Avoid Arrow / TMP writing completely: don't use load_dataset. ----
     with open(SFT_TRAIN_PATH, "r") as f:
         for line in f:
             data_list.append(json.loads(line))
 
     dataset = Dataset.from_list(data_list)
 
-    print("Loading base model...")
+    print(f"Loading base LLM {MODEL_ID}...")
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         trust_remote_code=True,
@@ -52,9 +52,9 @@ def train_llm():
     )
 
     lora_config = LoraConfig(
-        r=8,
+        r=ATTENTION_DIM,
         lora_alpha=16,
-        lora_dropout=0.05,
+        lora_dropout=DROPOUT,
         bias="none",
         task_type="CAUSAL_LM",
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]
@@ -62,16 +62,16 @@ def train_llm():
 
     sft_config = SFTConfig(
         output_dir=MODEL_FOLDER,
-        num_train_epochs=2,
-        per_device_train_batch_size=1,
+        num_train_epochs=EPOCHS,
+        per_device_train_batch_size=TRAIN_BATCH_SIZE,
         gradient_accumulation_steps=1,
-        learning_rate=2e-4,
+        learning_rate=LEARNING_RATE,
         logging_steps=20,
         save_steps=500,
         save_total_limit=1,
         bf16=True,
         packing=False,
-        max_seq_length=512,
+        max_seq_length=MAX_SEQ_LEN,
     )
 
     # Clean bad samples.
@@ -99,8 +99,8 @@ def train_llm():
     print("Training starts...")
     trainer.train()
 
-    print("Saving finetuned LLM...")
+    print(f"Saving fine-tuned {MODEL_ID}...")
     trainer.save_model(MODEL_FOLDER)
     tokenizer.save_pretrained(MODEL_FOLDER)
 
-    print("Training complete! Model saved to:", MODEL_FOLDER)
+    print(f"Training complete! Fine-tuned {MODEL_ID} saved to:", MODEL_FOLDER)
