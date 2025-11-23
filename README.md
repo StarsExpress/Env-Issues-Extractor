@@ -1,17 +1,21 @@
-# Environmental Issues Extractor ☃︎
+# 🌏 Environmental Issues Extractor
 
-## 📑 Description
+## 📑 Project Description
 Supervised fine-tuned LLM that detects and quantifies environment issues from 10,000+ environmental article titles.
 
 ## 📦 Distillation LLMs
 ### 👩🏻‍🏫 Selected Teacher: Qwen/Qwen3-4B-Instruct-2507
 **https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507**
 
+![qwen_4b_overview.png](images/qwen_4b_overview.png)
+
 Send 10,000+ environmental article titles to the teacher LLM,
 letting it extract and quantify environmental issues and save all results.
 
 ### 👨🏻‍🎓 Selected Student: Qwen/Qwen2.5-3B-Instruct
 **https://huggingface.co/Qwen/Qwen2.5-3B-Instruct**
+
+![qwen_3b_overview.png](images/qwen_3b_overview.png)
 
 Split 80% of the teacher's extracted and quantified issues to fine-tune the student LLM,
 and 20% for the evaluation on student LLM.
