@@ -21,8 +21,8 @@ Split 80% of the teacher's extracted and quantified issues to fine-tune the stud
 and 20% for the evaluation on student LLM.
 
 ## 📊 Evaluation Metrics
-#### MAE: 0.0038806808544477205
-#### RMSE: 0.029841735729631162
+#### MAE: 0.005026125701997377
+#### RMSE: 0.03792530667509259
 #### Total samples: 2187
 
 ## 📲 Example Issues Extraction
