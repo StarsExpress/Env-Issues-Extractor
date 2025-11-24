@@ -1,6 +1,6 @@
 
 # Batch config.
-EVAL_BATCH_SIZE = 4  # Speed up evaluation since evaluation prompts are short enough.
+EVAL_BATCH_SIZE = 8  # Speed up evaluation since evaluation prompts are short enough.
 
 
 # Tokenizer config.

@@ -29,12 +29,14 @@ and 20% for the evaluation on student LLM.
 
 ```json
 {
-  "title": "Thames Water fined \u00a32.3m for raw sewage pollution incident",
+  "title": "Carbon emissions from England's roads plan '100 times greater than government claims'",
   "issues": {
-    "bird activity": 8,
+    "air pollution": 1,
+    "biodiversity loss": 10,
     "climate change": 9,
-    "floods": 10,
-    "water pollution": 7
+    "energy crisis": 1,
+    "fossil fuel dependency": 8,
+    "waste": 1
   }
 }
 ```

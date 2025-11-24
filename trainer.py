@@ -5,7 +5,7 @@ from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig
 import torch
 from configs.paths_config import SFT_TRAIN_PATH, MODEL_FOLDER
-from configs.train_config import ATTENTION_DIM, DROPOUT
+from configs.train_config import RANK, ALPHA, DROPOUT, TARGET_MODULES
 from configs.train_config import MODEL_ID, TRAIN_BATCH_SIZE, EPOCHS, LEARNING_RATE, MAX_SEQ_LEN
 
 
@@ -52,12 +52,12 @@ def train_llm() -> None:
     )
 
     lora_config = LoraConfig(
-        r=ATTENTION_DIM,
-        lora_alpha=16,
+        r=RANK,
+        lora_alpha=ALPHA,
         lora_dropout=DROPOUT,
         bias="none",
         task_type="CAUSAL_LM",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]
+        target_modules=TARGET_MODULES
     )
 
     sft_config = SFTConfig(

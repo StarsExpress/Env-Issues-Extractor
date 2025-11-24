@@ -4,13 +4,14 @@ from configs.paths_config import ISSUES2INDICES_PATH, SFT_TRAIN_PATH, SFT_TEST_P
 from utils import load_jsonl, save_jsonl
 
 
-def build_sft_dataset(vectorized_data: list[dict], vocabularies: list[str]) -> list[dict]:
+def build_sft_dataset(vectorized_data: list[dict], vocabularies: list[str], for_train: bool) -> list[dict]:
     """
     Builds supervised fine-tuning dataset from vectorized data.
 
     Args:
         vectorized_data (list[dict]): List of samples with keys like "title", "issues", and "severity".
         vocabularies (list[str]): List of issue vocabularies for index reference.
+        for_train (bool): Flag indicating if the dataset is for training or evaluation.
 
     Returns:
         list[dict]: SFT dataset formatted for fine-tuning and evaluation.
@@ -22,12 +23,14 @@ def build_sft_dataset(vectorized_data: list[dict], vocabularies: list[str]) -> l
         issues_vector = sample["issues"]
         severity_vector = sample["severity"]
 
-        # ---- Sparse encoding. ----
-        indices = [idx for idx, entry in enumerate(issues_vector) if entry == 1]
-        severities = [severity_vector[idx] for idx in indices]
+        if for_train:  # In training, provide assistant output as reference.
+            # ---- Sparse encoding. ----
+            indices = [idx for idx, entry in enumerate(issues_vector) if entry == 1]
+            severities = [severity_vector[idx] for idx in indices]
+            assistant_output = json.dumps(indices) + "\n" + json.dumps(severities)  # Convert to shorter JSON lists.
 
-        # Convert to shorter JSON lists.
-        assistant_output = json.dumps(indices) + "\n" + json.dumps(severities)
+        else:  # In evaluation, don't give any reference.
+            assistant_output = ""
 
         # ---- Build prompt. ----
         vocab_size = len(vocabularies)
@@ -65,8 +68,8 @@ def save_sft_data() -> None:
     issues2indices = json.load(open(ISSUES2INDICES_PATH))
     issues = list(issues2indices.keys())  # Keys already sorted during utils vectorization.
 
-    sft_train = build_sft_dataset(vector_train, issues)
-    sft_test = build_sft_dataset(vector_test, issues)
+    sft_train = build_sft_dataset(vector_train, issues, for_train=True)
+    sft_test = build_sft_dataset(vector_test, issues, for_train=False)
 
     save_jsonl(SFT_TRAIN_PATH, sft_train)
     save_jsonl(SFT_TEST_PATH, sft_test)
