@@ -21,8 +21,8 @@ Split 80% of the teacher's extracted and quantified issues to fine-tune the stud
 and 20% for the evaluation on student LLM.
 
 ## 📊 Evaluation Metrics
-#### MAE: 0.005026125701997377
-#### RMSE: 0.03792530667509259
+#### MAE: 0.004736221986196294
+#### RMSE: 0.035369152172009685
 #### Total samples: 2187
 
 ## 📲 Example Issues Extraction
@@ -32,10 +32,11 @@ and 20% for the evaluation on student LLM.
   "title": "Carbon emissions from England's roads plan '100 times greater than government claims'",
   "issues": {
     "air pollution": 1,
-    "biodiversity loss": 10,
+    "biodiversity loss": 1,
     "climate change": 9,
+    "deforestation": 1,
     "energy crisis": 1,
-    "fossil fuel dependency": 8,
+    "fossil fuel dependence": 10,
     "waste": 1
   }
 }

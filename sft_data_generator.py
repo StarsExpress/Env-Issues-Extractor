@@ -4,13 +4,13 @@ from configs.paths_config import ISSUES2INDICES_PATH, SFT_TRAIN_PATH, SFT_TEST_P
 from utils import load_jsonl, save_jsonl
 
 
-def build_sft_dataset(vectorized_data: list[dict], vocabularies: list[str], for_train: bool) -> list[dict]:
+def build_sft_dataset(vectorized_data: list[dict], issues: list[str], for_train: bool) -> list[dict]:
     """
     Builds supervised fine-tuning dataset from vectorized data.
 
     Args:
         vectorized_data (list[dict]): List of samples with keys like "title", "issues", and "severity".
-        vocabularies (list[str]): List of issue vocabularies for index reference.
+        issues (list[str]): List of environmental issues.
         for_train (bool): Flag indicating if the dataset is for training or evaluation.
 
     Returns:
@@ -33,13 +33,13 @@ def build_sft_dataset(vectorized_data: list[dict], vocabularies: list[str], for_
             assistant_output = ""
 
         # ---- Build prompt. ----
-        vocab_size = len(vocabularies)
+        total_issues = len(issues)
         user_prompt = (
             "You are an environmental news analyst.\n"
             "Your task is to output TWO lists ONLY:\n\n"
             "Line 1: [indices of issues present]\n"
             "Line 2: [severity scores aligned with the same indices]\n\n"
-            f"Valid issue indices: 0 to {vocab_size - 1}\n"
+            f"Valid issue indices: 0 to {total_issues - 1}\n"
             "Severity scores range: 1–10\n\n"
             f"### Article title:\n{title}\n\n"
             "### Output:\n"
